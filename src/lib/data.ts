@@ -17,66 +17,57 @@ type DashboardStats = {
   dueTax: number
 }
 
-const emptyStats: DashboardStats = {
-  revenue: 0,
-  expenses: 0,
-  netProfit: 0,
-  dueTax: 0,
-}
+const emptyStats: DashboardStats = { revenue: 0, expenses: 0, netProfit: 0, dueTax: 0 }
 
-/**
- * Loads recent rows separately from the financial aggregates.
- * The old implementation calculated totals from only the eight most recent
- * transactions, which made the dashboard mathematically incorrect as soon
- * as a business had more than eight records.
- */
 export async function getDashboardData() {
-  if (!supabase) {
-    return { transactions: [] as TransactionRow[], stats: emptyStats }
-  }
+  if (!supabase) return { transactions: [] as TransactionRow[], stats: emptyStats }
 
-  const [recentResult, transactionTotalsResult, invoiceTaxResult] = await Promise.all([
-    supabase
-      .from('transactions')
-      .select('id,client_name,type,status,amount,transaction_date,notes')
-      .order('transaction_date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(25),
-    supabase
-      .from('transactions')
-      .select('type,status,amount'),
-    supabase
-      .from('invoices')
-      .select('status,tax')
-      .in('status', ['Draft', 'Sent', 'Overdue']),
+  const [transactionResult, invoiceResult, expenseResult] = await Promise.all([
+    supabase.from('transactions').select('id,client_name,type,status,amount,transaction_date,notes').order('transaction_date', { ascending: false }).order('created_at', { ascending: false }).limit(25),
+    supabase.from('invoices').select('id,invoice_number,customer_id,issue_date,due_date,status,subtotal,tax,total,created_at').order('issue_date', { ascending: false }).order('created_at', { ascending: false }).limit(25),
+    supabase.from('expenses').select('id,description,amount,expense_date,category,status,created_at').order('expense_date', { ascending: false }).order('created_at', { ascending: false }).limit(25),
   ])
 
-  if (recentResult.error || transactionTotalsResult.error) {
-    console.error('Could not fetch accounting data', recentResult.error ?? transactionTotalsResult.error)
+  if (transactionResult.error || invoiceResult.error || expenseResult.error) {
+    console.error('Could not fetch accounting data', transactionResult.error ?? invoiceResult.error ?? expenseResult.error)
     return { transactions: [], stats: emptyStats }
   }
 
-  const totals = transactionTotalsResult.data ?? []
-  const invoices = invoiceTaxResult.error ? [] : invoiceTaxResult.data ?? []
+  const transactions = (transactionResult.data ?? []) as TransactionRow[]
+  const invoices = invoiceResult.data ?? []
+  const expenses = expenseResult.data ?? []
 
-  const revenue = totals.reduce((sum, item) => {
-    return item.type === 'Invoice' && item.status === 'Paid' ? sum + Number(item.amount) : sum
-  }, 0)
+  const invoiceRows: TransactionRow[] = invoices.map((invoice) => ({
+    id: `invoice:${invoice.id}`,
+    client_name: invoice.invoice_number,
+    type: 'Invoice',
+    status: invoice.status === 'Paid' ? 'Paid' : invoice.status === 'Overdue' ? 'Review' : 'Pending',
+    amount: Number(invoice.total ?? 0),
+    transaction_date: invoice.issue_date,
+    notes: invoice.customer_id ?? null,
+  }))
 
-  const expenses = totals.reduce((sum, item) => {
-    return item.type === 'Expense' ? sum + Number(item.amount) : sum
-  }, 0)
+  const expenseRows: TransactionRow[] = expenses.map((expense) => ({
+    id: `expense:${expense.id}`,
+    client_name: expense.description || expense.category || 'Expense',
+    type: 'Expense',
+    status: expense.status,
+    amount: Number(expense.amount ?? 0),
+    transaction_date: expense.expense_date,
+    notes: expense.category ?? null,
+  }))
 
-  const dueTax = invoices.reduce((sum, item) => sum + Number(item.tax ?? 0), 0)
+  const recent = [...invoiceRows, ...expenseRows, ...transactions]
+    .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
+    .slice(0, 25)
+
+  const revenue = invoices.reduce((sum, item) => item.status === 'Paid' ? sum + Number(item.total ?? 0) : sum, 0)
+  const expensesTotal = expenses.reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
+  const dueTax = invoices.reduce((sum, item) => ['Sent', 'Overdue'].includes(item.status) ? sum + Number(item.tax ?? 0) : sum, 0)
 
   return {
-    transactions: (recentResult.data ?? []) as TransactionRow[],
-    stats: {
-      revenue,
-      expenses,
-      netProfit: revenue - expenses,
-      dueTax,
-    },
+    transactions: recent,
+    stats: { revenue, expenses: expensesTotal, netProfit: revenue - expensesTotal, dueTax },
   }
 }
 
@@ -117,6 +108,19 @@ export async function updateVendor(id: string, values: { name: string; email: st
 export async function deleteVendor(id: string) {
   if (!supabase) throw new Error('Supabase is not configured.')
   const { error } = await supabase.from('vendors').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function updateInvoiceStatus(id: string, status: 'Paid' | 'Pending' | 'Review') {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  const invoiceStatus = status === 'Paid' ? 'Paid' : status === 'Review' ? 'Overdue' : 'Sent'
+  const { error } = await supabase.from('invoices').update({ status: invoiceStatus }).eq('id', id)
+  if (error) throw error
+}
+
+export async function updateExpenseStatus(id: string, status: 'Paid' | 'Pending' | 'Review') {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  const { error } = await supabase.from('expenses').update({ status }).eq('id', id)
   if (error) throw error
 }
 
