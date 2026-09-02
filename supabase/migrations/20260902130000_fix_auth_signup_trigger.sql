@@ -2,8 +2,19 @@
 -- Keep the trigger security-definer and use an empty search_path so auth.users
 -- inserts are not dependent on the caller's database search path.
 
-alter table public.accounts
-  add constraint accounts_user_id_code_key unique (user_id, code);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'accounts_user_id_code_key'
+      and conrelid = 'public.accounts'::regclass
+  ) then
+    alter table public.accounts
+      add constraint accounts_user_id_code_key unique (user_id, code);
+  end if;
+end;
+$$;
 
 create or replace function public.handle_new_accounting_user()
 returns trigger
