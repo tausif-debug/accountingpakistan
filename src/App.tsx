@@ -41,7 +41,7 @@ function App() {
   const [stats, setStats] = useState(emptyStats)
   const [customers, setCustomers] = useState<CustomerRecord[]>([])
   const [vendors, setVendors] = useState<VendorRecord[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(isSupabaseConfigured)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [authForm, setAuthForm] = useState({ email: '', password: '', fullName: '' })
   const [authStatus, setAuthStatus] = useState('')
@@ -70,16 +70,17 @@ function App() {
   }
 
   useEffect(() => {
-    if (!supabase) { setLoading(false); return }
+    const client = supabase
+    if (!client) return
     let mounted = true
     const initialise = async () => {
-      const { data } = await supabase.auth.getSession()
+      const { data } = await client.auth.getSession()
       if (!mounted) return
       setUserEmail(data.session?.user.email ?? '')
       await refresh()
     }
     void initialise()
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUserEmail(session?.user.email ?? ''); if (session) void refresh() })
+    const { data: listener } = client.auth.onAuthStateChange((_event, session) => { setUserEmail(session?.user.email ?? ''); if (session) void refresh() })
     return () => { mounted = false; listener.subscription.unsubscribe() }
   }, [])
 
