@@ -4,7 +4,7 @@ import './App.css'
 import { getDashboardData } from './lib/data'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
-type View = 'dashboard' | 'invoices' | 'expenses' | 'contacts' | 'auth'
+type View = 'dashboard' | 'invoices' | 'expenses' | 'contacts' | 'reports' | 'auth'
 type ContactTab = 'customers' | 'vendors'
 
 type MetricCard = {
@@ -137,6 +137,8 @@ function App() {
   const [formMessage, setFormMessage] = useState('')
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null)
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null)
+  const [dateRangeStart, setDateRangeStart] = useState('2026-08-01')
+  const [dateRangeEnd, setDateRangeEnd] = useState('2026-08-31')
 
   useEffect(() => {
     let isMounted = true
@@ -452,6 +454,50 @@ function App() {
     setEditingVendorId(vendor.id || null)
   }
 
+  const updateTransactionStatus = (index: number, newStatus: 'Paid' | 'Pending' | 'Review') => {
+    setTransactions((current) => {
+      const updated = [...current]
+      updated[index] = { ...updated[index], status: newStatus }
+      return updated
+    })
+    setFormMessage('Transaction status updated.')
+  }
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      const txDate = new Date(t.date)
+      const startDate = new Date(dateRangeStart)
+      const endDate = new Date(dateRangeEnd)
+      return txDate >= startDate && txDate <= endDate
+    })
+  }, [transactions, dateRangeStart, dateRangeEnd])
+
+  const monthlyBreakdown = useMemo(() => {
+    const months: Record<string, { income: number; expense: number }> = {}
+    filteredTransactions.forEach((tx) => {
+      const monthKey = tx.date.slice(0, 7)
+      if (!months[monthKey]) months[monthKey] = { income: 0, expense: 0 }
+      if (tx.type === 'Invoice') months[monthKey].income += tx.amount
+      else if (tx.type === 'Expense') months[monthKey].expense += Math.abs(tx.amount)
+    })
+    return Object.entries(months)
+      .sort()
+      .map(([month, data]) => ({ month, ...data }))
+  }, [filteredTransactions])
+
+  const categoryBreakdown = useMemo(() => {
+    const categories: Record<string, number> = {}
+    filteredTransactions
+      .filter((t) => t.type === 'Expense')
+      .forEach((tx) => {
+        // Parse category from client name if available, default to general
+        categories[tx.client] = (categories[tx.client] || 0) + Math.abs(tx.amount)
+      })
+    return Object.entries(categories)
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount)
+  }, [filteredTransactions])
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -468,6 +514,7 @@ function App() {
           <button type="button" className={activeView === 'invoices' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveView('invoices')}>Invoices</button>
           <button type="button" className={activeView === 'expenses' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveView('expenses')}>Expenses</button>
           <button type="button" className={activeView === 'contacts' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveView('contacts')}>Contacts</button>
+          <button type="button" className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveView('reports')}>Reports</button>
           <button type="button" className={activeView === 'auth' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveView('auth')}>{userEmail ? 'Account' : 'Login'}</button>
         </nav>
 
@@ -576,9 +623,32 @@ function App() {
                       <td>{transaction.type}</td>
                       <td>{transaction.date}</td>
                       <td>
-                        <span className={`status ${transaction.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                          {transaction.status}
-                        </span>
+                        <div className="status-controls">
+                          <button
+                            type="button"
+                            className={`status-btn ${transaction.status === 'Paid' ? 'active' : ''}`}
+                            onClick={() => updateTransactionStatus(index, 'Paid')}
+                            title="Mark as paid"
+                          >
+                            Paid
+                          </button>
+                          <button
+                            type="button"
+                            className={`status-btn ${transaction.status === 'Pending' ? 'active' : ''}`}
+                            onClick={() => updateTransactionStatus(index, 'Pending')}
+                            title="Mark as pending"
+                          >
+                            Pending
+                          </button>
+                          <button
+                            type="button"
+                            className={`status-btn ${transaction.status === 'Review' ? 'active' : ''}`}
+                            onClick={() => updateTransactionStatus(index, 'Review')}
+                            title="Mark for review"
+                          >
+                            Review
+                          </button>
+                        </div>
                       </td>
                       <td className="amount-column positive-negative">
                         {formatCurrency(transaction.amount)}
@@ -805,6 +875,86 @@ function App() {
                 </div>
               </>
             )}
+          </section>
+        )}
+
+        {activeView === 'reports' && (
+          <section className="panel form-panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Analytics</p>
+                <h3>Financial reports</h3>
+              </div>
+            </div>
+
+            <div className="filter-row">
+              <label>
+                From date
+                <input type="date" value={dateRangeStart} onChange={(e) => setDateRangeStart(e.target.value)} />
+              </label>
+              <label>
+                To date
+                <input type="date" value={dateRangeEnd} onChange={(e) => setDateRangeEnd(e.target.value)} />
+              </label>
+            </div>
+
+            <div className="report-section">
+              <h4>Monthly breakdown</h4>
+              <div className="monthly-chart">
+                {monthlyBreakdown.map((month) => (
+                  <div key={month.month} className="month-bar">
+                    <div className="bar-container">
+                      <div className="bar income" style={{ height: `${Math.min((month.income / 300000) * 100, 100)}%` }} title={`Income: ${formatCurrency(month.income)}`} />
+                      <div className="bar expense" style={{ height: `${Math.min((month.expense / 300000) * 100, 100)}%` }} title={`Expense: ${formatCurrency(month.expense)}`} />
+                    </div>
+                    <span className="month-label">{month.month}</span>
+                    <div className="month-values">
+                      <small className="income-val">{formatCurrency(month.income)}</small>
+                      <small className="expense-val">-{formatCurrency(month.expense)}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="report-section">
+              <h4>Expense breakdown by vendor</h4>
+              <div className="category-list">
+                {categoryBreakdown.map((category) => {
+                  const total = categoryBreakdown.reduce((sum, c) => sum + c.amount, 0)
+                  const percentage = total > 0 ? (category.amount / total) * 100 : 0
+                  return (
+                    <div key={category.name} className="category-row">
+                      <div className="category-info">
+                        <p>{category.name}</p>
+                        <div className="progress-bar">
+                          <div className="progress-fill" style={{ width: `${percentage}%` }} />
+                        </div>
+                      </div>
+                      <strong>{formatCurrency(category.amount)}</strong>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="report-section">
+              <h4>Transaction status summary</h4>
+              <div className="status-summary">
+                <div className="status-card">
+                  <span className="status-label">Paid</span>
+                  <strong>{formatCurrency(filteredTransactions.filter((t) => t.status === 'Paid').reduce((sum, t) => sum + t.amount, 0))}</strong>
+                </div>
+                <div className="status-card">
+                  <span className="status-label">Pending</span>
+                  <strong>{formatCurrency(filteredTransactions.filter((t) => t.status === 'Pending').reduce((sum, t) => sum + t.amount, 0))}</strong>
+                </div>
+                <div className="status-card">
+                  <span className="status-label">Review</span>
+                  <strong>{formatCurrency(filteredTransactions.filter((t) => t.status === 'Review').reduce((sum, t) => sum + t.amount, 0))}</strong>
+                </div>
+              </div>
+            </div>
           </section>
         )}
 
