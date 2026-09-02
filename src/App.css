@@ -433,6 +433,45 @@ input:focus {
   gap: 8px;
 }
 
+.contact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.contact-header h4 {
+  margin: 0;
+  flex: 1;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.contact-btn {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.contact-btn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+}
+
+.contact-btn.delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
 .contact-card p,
 .contact-card span {
   margin: 0;

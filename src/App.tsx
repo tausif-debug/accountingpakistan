@@ -23,6 +23,7 @@ type Transaction = {
 }
 
 type CustomerRecord = {
+  id?: string
   name: string
   email: string
   phone: string
@@ -31,6 +32,7 @@ type CustomerRecord = {
 }
 
 type VendorRecord = {
+  id?: string
   name: string
   email: string
   phone: string
@@ -133,6 +135,8 @@ function App() {
   const [customerForm, setCustomerForm] = useState<CustomerRecord>(initialCustomerForm)
   const [vendorForm, setVendorForm] = useState<VendorRecord>(initialVendorForm)
   const [formMessage, setFormMessage] = useState('')
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null)
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -334,8 +338,19 @@ function App() {
 
     const nextCustomer: CustomerRecord = { ...customerForm }
 
+    if (editingCustomerId) {
+      setCustomers((current) =>
+        current.map((c) => (c.id === editingCustomerId ? { ...nextCustomer, id: editingCustomerId } : c))
+      )
+      setFormMessage('Customer updated successfully.')
+      setCustomerForm(initialCustomerForm)
+      setEditingCustomerId(null)
+      return
+    }
+
     if (!supabase) {
-      setCustomers((current) => [nextCustomer, ...current])
+      const customerId = Math.random().toString(36).slice(2, 9)
+      setCustomers((current) => [{ ...nextCustomer, id: customerId }, ...current])
       setFormMessage('Customer saved locally.')
       setCustomerForm(initialCustomerForm)
       return
@@ -368,13 +383,34 @@ function App() {
     setCustomerForm(initialCustomerForm)
   }
 
+  const deleteCustomer = (customerId: string) => {
+    setCustomers((current) => current.filter((c) => c.id !== customerId))
+    setFormMessage('Customer deleted.')
+  }
+
+  const editCustomer = (customer: CustomerRecord) => {
+    setCustomerForm(customer)
+    setEditingCustomerId(customer.id || null)
+  }
+
   const handleVendorSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const nextVendor: VendorRecord = { ...vendorForm }
 
+    if (editingVendorId) {
+      setVendors((current) =>
+        current.map((v) => (v.id === editingVendorId ? { ...nextVendor, id: editingVendorId } : v))
+      )
+      setFormMessage('Vendor updated successfully.')
+      setVendorForm(initialVendorForm)
+      setEditingVendorId(null)
+      return
+    }
+
     if (!supabase) {
-      setVendors((current) => [nextVendor, ...current])
+      const vendorId = Math.random().toString(36).slice(2, 9)
+      setVendors((current) => [{ ...nextVendor, id: vendorId }, ...current])
       setFormMessage('Vendor saved locally.')
       setVendorForm(initialVendorForm)
       return
@@ -404,6 +440,16 @@ function App() {
     setVendors((current) => [nextVendor, ...current])
     setFormMessage('Vendor saved successfully.')
     setVendorForm(initialVendorForm)
+  }
+
+  const deleteVendor = (vendorId: string) => {
+    setVendors((current) => current.filter((v) => v.id !== vendorId))
+    setFormMessage('Vendor deleted.')
+  }
+
+  const editVendor = (vendor: VendorRecord) => {
+    setVendorForm(vendor)
+    setEditingVendorId(vendor.id || null)
   }
 
   return (
@@ -668,13 +714,31 @@ function App() {
                     <input value={customerForm.gstNumber} onChange={(event) => setCustomerForm((current) => ({ ...current, gstNumber: event.target.value }))} placeholder="00-0000000-0" />
                   </label>
 
-                  <button type="submit" className="primary-btn">Add customer</button>
+                  <button type="submit" className="primary-btn">{editingCustomerId ? 'Update customer' : 'Add customer'}</button>
+                  {editingCustomerId && (
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => {
+                        setEditingCustomerId(null)
+                        setCustomerForm(initialCustomerForm)
+                      }}
+                    >
+                      Cancel edit
+                    </button>
+                  )}
                 </form>
 
                 <div className="contact-list">
                   {customers.map((entry) => (
-                    <div className="contact-card" key={`${entry.name}-${entry.email}`}>
-                      <h4>{entry.name}</h4>
+                    <div className="contact-card" key={entry.id || `${entry.name}-${entry.email}`}>
+                      <div className="contact-header">
+                        <h4>{entry.name}</h4>
+                        <div className="contact-actions">
+                          <button type="button" className="contact-btn" onClick={() => editCustomer(entry)} title="Edit">✎</button>
+                          <button type="button" className="contact-btn delete" onClick={() => deleteCustomer(entry.id || '')} title="Delete">✕</button>
+                        </div>
+                      </div>
                       <p>{entry.email}</p>
                       <p>{entry.phone}</p>
                       <p>{entry.city}</p>
@@ -708,13 +772,31 @@ function App() {
                     </label>
                   </div>
 
-                  <button type="submit" className="primary-btn">Add vendor</button>
+                  <button type="submit" className="primary-btn">{editingVendorId ? 'Update vendor' : 'Add vendor'}</button>
+                  {editingVendorId && (
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => {
+                        setEditingVendorId(null)
+                        setVendorForm(initialVendorForm)
+                      }}
+                    >
+                      Cancel edit
+                    </button>
+                  )}
                 </form>
 
                 <div className="contact-list">
                   {vendors.map((entry) => (
-                    <div className="contact-card" key={`${entry.name}-${entry.email}`}>
-                      <h4>{entry.name}</h4>
+                    <div className="contact-card" key={entry.id || `${entry.name}-${entry.email}`}>
+                      <div className="contact-header">
+                        <h4>{entry.name}</h4>
+                        <div className="contact-actions">
+                          <button type="button" className="contact-btn" onClick={() => editVendor(entry)} title="Edit">✎</button>
+                          <button type="button" className="contact-btn delete" onClick={() => deleteVendor(entry.id || '')} title="Delete">✕</button>
+                        </div>
+                      </div>
                       <p>{entry.email}</p>
                       <p>{entry.phone}</p>
                       <p>{entry.city}</p>
